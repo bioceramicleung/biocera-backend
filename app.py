@@ -1,13 +1,24 @@
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-from fastapi.responses import HTMLResponse
 import logging
 import copy
 
+# ─── FastAPI Initialization ────────────────────────────────────────────────────
+# We disable ReDoc (redoc_url=None) and keep docs at /docs
+app = FastAPI(
+    title="BioCera API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url=None
+)
+
+# ─── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# ─── Data Models ───────────────────────────────────────────────────────────────
 class Item(BaseModel):
     name: str
     quantity: int
@@ -18,9 +29,17 @@ class OrderRequest(BaseModel):
     items: List[Item]
     notice: Optional[str] = None   # New field for notice
 
-app = FastAPI(title="BioCera API", version="1.0.0")
+# In-memory store
 orders: List[Dict] = []
 
+# ─── Routes ────────────────────────────────────────────────────────────────────
+
+# 1) Redirect root "/" to "/docs"
+@app.get("/", include_in_schema=False)
+async def redirect_root_to_docs():
+    return RedirectResponse(url="/docs")
+
+# 2) API: Create a new order
 @app.post("/order", response_model=Dict)
 async def create_order(req: OrderRequest):
     total_price = sum(i.quantity * i.price for i in req.items)
@@ -32,18 +51,19 @@ async def create_order(req: OrderRequest):
         "items": [i.dict() for i in req.items],
         "totalPrice": total_price
     }
-    stored_order = copy.deepcopy(order)
-    orders.append(stored_order)
+    orders.append(copy.deepcopy(order))
     logger.debug(f"Created order: {order}")
     return order
 
+# 3) API: Get all orders
 @app.get("/orders", response_model=List[Dict])
 async def get_orders():
     logger.debug(f"Returning orders: {orders}")
     return orders
 
-@app.get("/", response_class=HTMLResponse)
-async def index():
+# 4) Optional HTML dashboard at /dashboard
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
     return HTMLResponse("""
     <h2>訂單列表</h2>
     <p>最後更新: <span id="last-update"></span></p>
